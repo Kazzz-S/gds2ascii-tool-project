@@ -1,3 +1,6 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
 ######################################################################
 #                                                                    #
 #  Author: Michael Duh                                               #
@@ -32,14 +35,14 @@ def readStream(stream):
             rec_data.append( stream.read(dat_size[dat_type]) )
             stream.seek(0, 1)
         return [rec_size, [rec_type, dat_type], rec_data]
-    
+
     except:
         return -1
 
 # Reading Hex stream.
 #
 # input  : (list) [ record length, [record type, data type], [data1, data2, ...] ]
-# return : (string) record name 
+# return : (string) record name
 def appendName(record):
     name_list = {0x00 : 'HEADER',
                 0x01 : 'BGNLIB',
@@ -62,28 +65,28 @@ def appendName(record):
                 0x12 : 'SNAME',
                 0x13 : 'COLROW',
                 0x15 : 'NODE',
-                0x16 : 'TEXTTYPE', 
-                0x17 : 'PRESENTATION', 
-                0x19 : 'STRING', 
-                0x1A : 'STRANS', 
-                0x1B : 'MAG', 
-                0x1C : 'ANGLE', 
-                0x1F : 'REFLIBS', 
-                0x20 : 'FONTS', 
-                0x21 : 'PATHTYPE', 
-                0x22 : 'GENERATIONS', 
-                0x23 : 'ATTRATABLE', 
-                0x26 : 'ELFLAGS', 
-                0x2A : 'NODETYPE', 
-                0x2B : 'PROPATTR', 
-                0x2C : 'PROPVALUE', 
-                0x2D : 'BOX', 
-                0x2E : 'BOXTYPE', 
-                0x2F : 'PLEX', 
-                0x32 : 'TAPENUM', 
-                0x33 : 'TAPECODE', 
-                0x36 : 'FORMAT', 
-                0x37 : 'MASK', 
+                0x16 : 'TEXTTYPE',
+                0x17 : 'PRESENTATION',
+                0x19 : 'STRING',
+                0x1A : 'STRANS',
+                0x1B : 'MAG',
+                0x1C : 'ANGLE',
+                0x1F : 'REFLIBS',
+                0x20 : 'FONTS',
+                0x21 : 'PATHTYPE',
+                0x22 : 'GENERATIONS',
+                0x23 : 'ATTRATABLE',
+                0x26 : 'ELFLAGS',
+                0x2A : 'NODETYPE',
+                0x2B : 'PROPATTR',
+                0x2C : 'PROPVALUE',
+                0x2D : 'BOX',
+                0x2E : 'BOXTYPE',
+                0x2F : 'PLEX',
+                0x32 : 'TAPENUM',
+                0x33 : 'TAPECODE',
+                0x36 : 'FORMAT',
+                0x37 : 'MASK',
                 0x38 : 'ENDMASKS'
                 }
     return name_list[record[1][0]]
@@ -103,7 +106,7 @@ def extractData(record):
     elif record[1][1] == 0x02:
         for i in list(range(0, (record[0]-4)//2)):
             data.append( struct.unpack('>h', record[2][i])[0] )
-        return data 
+        return data
 
     elif record[1][1] == 0x03:
         for i in list(range(0, (record[0]-4)//4)):
@@ -125,28 +128,36 @@ def extractData(record):
             data.append( struct.unpack('>c', record[2][i])[0].decode("utf-8") )
         return data
 
-# Main 
-# Command argument 1 : input .gds file path
-# Command argument 2 : output file path
+# Main
+# Command argument 1 : input .gds file path (mandatory)
+# Command argument 2 : output .json file path (optional)
 def main():
+    if len(sys.argv) < 2 or sys.argv[1] == "-h":
+        print( "Usage:" )
+        print( "  $ gds2ascii.py <input.gds> [output.json]" )
+        print( "" )
+        sys.exit(0)
     inputFile = sys.argv[1]
-    outputFile = sys.argv[2]
+    if len(sys.argv) == 3:
+        outputFile = sys.argv[2]
+    else:
+        outputFile = None
     asciiOut = []
 
-    with open(inputFile, mode='rb') as ifile:   
+    with open(inputFile, mode='rb') as ifile:
         while True:
             record = readStream(ifile)
             data = extractData(record)
             name = appendName(record)
-            asciiOut.append([name, data])        
+            asciiOut.append([name, data])
             print([name, data])
             if record[1][0] == 0x04:
                 break
 
-        with open(outputFile, 'w') as ofile:
-            json.dump(asciiOut, ofile, indent=4)
+        if not outputFile == None:
+            with open(outputFile, 'w') as ofile:
+                json.dump(asciiOut, ofile, indent=4)
 
 
 if __name__ == '__main__':
     main()
-    
