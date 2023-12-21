@@ -39,6 +39,86 @@ def readStream(stream):
     except:
         return -1
 
+#--------------------------------------------------------------------------------------------------
+# GDSII format
+#
+#   Ref. https://boolean.klaasholwerda.nl/interface/bnf/gdsformat.html
+#
+#     Eight-Byte Real
+#
+#     8-byte real = 4-word floating point representation
+#     For all non-zero values:
+#
+#     A floating point number has three parts: the sign, the exponent, and the mantissa.
+#     The value of a floating point number is defined as:
+#     (Mantissa) x (16 raised to the true value of the exponent field).
+#     The exponent field (bits 1-7) is in Excess-64 representation.
+#     The 7-bit field shows a number that is 64 greater than the actual exponent.
+#     The mantissa is always a positive fraction >=1/16 and <1. For a 4-byte real, the mantissa
+#     is bits 8-31. For an 8-byte real, the mantissa is bits 8-63.
+#     The binary point is just to the left of bit 8.
+#     Bit 8 represents the value 1/2, bit 9 represents 1/4, etc.
+#     In order to keep the mantissa in the range of 1/16 to 1, the results of floating point
+#     arithmetic are normalized. Normalization is a process where by the mantissa is shifted
+#     left one hex digit at a time until its left FOUR bits represent a non-zero quantity.
+#     For every hex digit shifted, the exponent is decreased by one. Since the mantissa is shifted
+#     four bits at a time, it is possible for the left three bits of the normalized mantissa to be zero.
+#     A zero value, also called true zero, is represented by a number with all bits zero.
+#
+#     The following are representations of 4-byte and 8-byte reals, where S is the sign,
+#     E is the exponent, and M is the magnitude. Examples of 4-byte reals are included in the
+#     following pages, but 4-byte reals are not used currently.
+#     The representation of the negative values of real numbers is exactly the same as the positive,
+#     except that the highest order bit is 1, not 0. In the eight-byte real representation,
+#     the first four bytes are exactly the same as in the four-byte real representation.
+#     The last four bytes contain additional binary places for more resolution.
+#
+#     4-byte real:
+#       SEEEEEEE MMMMMMMM MMMMMMMM MMMMMMMM
+#
+#     8-byte real:
+#       SEEEEEEE MMMMMMMM MMMMMMMM MMMMMMMM MMMMMMMM MMMMMMMM MMMMMMMM MMMMMMMM
+#       00000000 00111111 11112222 22222233 33333333 44444444 44555555 55566666
+#       01234567 89012345 67890123 45678901 23456789 01234567 89012345 67890123
+#--------------------------------------------------------------------------------------------------
+
+# Convert an IBM 370 representation of floating-point number to an IEEE 754 format
+#
+# input  : an IBM 370 representation of floating-point number as an 8-byte array in big-endian order
+# return : the double precision floating point number in the IEEE 754 format
+def ibm370_to_ieee754( ibm_bytes, debug=False ):
+    import math
+
+    if debug:
+        hex_string = ' '.join(['{:02x}'.format(b) for b in ibm_bytes])
+        print( "Input IBM 370 floating-point number (hex) = %s" % hex_string )
+        # 3e 41 89 37 4b c6 a7 f0  ==> 0.001
+        # 39 44 b8 2f a0 9b 5a 54  ==> 1e-09
+
+    # [1] Get the leftmost bit of the first byte that defines the sign.
+    if ibm_bytes[0] & 0x80:
+        sign = -1.0
+    else:
+        sign = +1.0
+
+    # [2] The remaining 7 bits of the first byte form the base-16 exponent offset by +64.
+    #     Note that 16**n == (2**4)**n == 2**(4*n).
+    #                   ^                     ^^^
+    exponent2 = int( 4 * ((ibm_bytes[0] & 0x7f) - 64) )
+
+    # [3] The remaining 7 bytes form the mantissa in big-endian order, which is a base-16 float.
+    mantissa = 0
+    divisor  = 256.0
+    for i in range(1, 8):
+        mantissa += ibm_bytes[i] / divisor
+        divisor  *= 256.0
+
+    # [4] Compute the double value in the IEEE 754 format
+    ieee754_value = sign * math.ldexp( mantissa, exponent2 )
+    if debug:
+        print( "    ==> Converted double value in the IEEE 754 format = %s" % ieee754_value )
+    return ieee754_value
+
 # Reading Hex stream.
 #
 # input  : (list) [ record length, [record type, data type], [data1, data2, ...] ]
@@ -119,10 +199,18 @@ def extractData(record):
         return data
 
     elif record[1][1] == 0x05:
+        """
         for i in list(range(0, (record[0]-4)//8)):
             data.append( struct.unpack('>d', record[2][i])[0] )
         return data
+        """
 
+        # The 8-byte array is for the 'UNITS' record, which is a floating point number in IBM 370 representation.
+        for i in list(range(0, (record[0]-4)//8)):
+            double8bytes = record[2][i]
+            ieee754FP = ibm370_to_ieee754( double8bytes, debug=False )
+            data.append(ieee754FP)
+        return data
     else:
         for i in list(range(0, (record[0]-4))):
             data.append( struct.unpack('>c', record[2][i])[0].decode("utf-8") )
